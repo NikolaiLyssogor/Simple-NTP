@@ -8,43 +8,17 @@
 #include <stdint.h>
 #include <sys/time.h>
 
+#include "ntppacket.h"
+
 #define SERVERADDR "utcnist.colorado.edu"
 #define SERVERPORT "123"
 #define PACKETSIZE 48 // size of our NTP packets
 #define NTP_EPOCH_OFFSET 2208988800UL // seconds between 1/1/1900 (NTP epoch) and 1/1/1970 (Unix epoch)
 
-typedef struct {
-
-    uint8_t li_vn_mode;
-    uint8_t stratum;
-    uint8_t poll;
-    uint8_t precision;
-
-    // Not needed for assignment
-    uint32_t root_delay;
-    uint32_t root_dispersion;
-    uint32_t ref_id;
-
-    // Split into integer and fraction part
-    uint32_t ref_ts_int;
-    uint32_t ref_ts_frac;
-
-    uint32_t org_ts_int;
-    uint32_t org_ts_frac;
-
-    uint32_t recv_ts_int;
-    uint32_t recv_ts_frac;
-
-    uint32_t trans_ts_int;
-    uint32_t trans_ts_frac;
-    
-} ntp_packet;
 
 typedef struct {
-    uint32_t delay_int; // Seconds of delay
-    uint32_t delay_frac; // Picoseconds? of delay
-    uint32_t offset_int; // Seconds of offset
-    uint32_t offset_frac; // Picoseconds? of offset
+    uint64_t delay_usec; // microseconds of delay
+    uint64_t offset_usec; // microseconds of offset
 } update_value;
 
 uint32_t timeval_to_ntp_seconds(time_t seconds) {
@@ -63,6 +37,16 @@ uint32_t timeval_to_ntp_frac(long frac) {
     https://tickelton.gitlab.io/articles/ntp-timestamps/
     */
    return (uint32_t)((double)(frac + 1) * (double)(1LL << 32) * 1.0e-6);
+}
+
+uint32_t ntp_to_timeval_frac(uint32_t frac) {
+    /*
+    Multiply by an appropriate factor to get the required
+    subdivision of seconds, e.g. 10^6 for microseconds, and 
+    divide by 2^23.
+    https://tickelton.gitlab.io/articles/ntp-timestamps/
+    */
+   return (uint32_t) ((double)frac * 1.0e6 / (double)(1LL << 32));
 }
 
 void print_uint32_t_binary(uint32_t value) {
@@ -91,19 +75,18 @@ void compute_delay_and_offset(ntp_packet packet, struct timeval dest_tv, update_
     int dest_ts_frac = timeval_to_ntp_frac(dest_tv.tv_usec);
 
     // Finally, compute delay and offset
-    values->delay_int = (dest_ts_int - packet.org_ts_int) - (packet.trans_ts_int - packet.recv_ts_int);
-    values->delay_frac = (dest_ts_frac - packet.org_ts_frac) - (packet.trans_ts_frac - packet.recv_ts_frac);
-    values->offset_int = 0.5*((packet.recv_ts_int - packet.org_ts_int) + (packet.trans_ts_int - dest_ts_int));
-    values->offset_frac = 0.5*((packet.recv_ts_frac - packet.org_ts_frac) + (packet.trans_ts_frac - dest_ts_frac));
+    uint32_t delay_int = (dest_ts_int - packet.org_ts_int) - (packet.trans_ts_int - packet.recv_ts_int);
+    uint32_t delay_frac = (dest_ts_frac - packet.org_ts_frac) - (packet.trans_ts_frac - packet.recv_ts_frac);
+    uint32_t offset_int = 0.5*((packet.recv_ts_int - packet.org_ts_int) + (packet.trans_ts_int - dest_ts_int));
+    uint32_t offset_frac = 0.5*((packet.recv_ts_frac - packet.org_ts_frac) + (packet.trans_ts_frac - dest_ts_frac));
 
-    // TODO: Convert fraction to base-10 picoseconds?
+    // Convert fraction values to timeval microseconds
+    delay_frac = ntp_to_timeval_frac(delay_frac);
+    offset_frac = ntp_to_timeval_frac(offset_frac);
 
-    // printf("delay seconds: %u\n", values->delay_int);
-    // printf("delay fraction: %u ", values->delay_frac);
-    // print_uint32_t_binary(values->delay_frac);
-    // printf("offset seconds: %u\n", values->offset_int);
-    // printf("offset fraction: %u ", values->offset_frac);
-    // print_uint32_t_binary(values->offset_frac);
+    // Pack the update_value passed by reference
+    values->delay_usec = delay_int*1000000 + delay_frac;
+    values->offset_usec = offset_int*1000000 + offset_frac;
 }
 
 update_value send_request() {
@@ -115,7 +98,7 @@ update_value send_request() {
     */
    
     // Update value to return in case of error
-    update_value error_values = { 0.0, 0.0, 0.0, 0.0 };
+    update_value error_values = { 0.0, 0.0 };
     update_value success_values;
 
     int sockfd, bytes_sent, bytes_recvd;
@@ -232,8 +215,7 @@ void send_request_burst(int burst_num) {
         update_value vals = send_request();
 
         // Write results to text file
-        fprintf(fp, "%u             %u       %u              %u\n",
-        vals.delay_int, vals.delay_frac, vals.offset_int, vals.offset_frac);
+        fprintf(fp, "%llu      %llu\n", vals.delay_usec, vals.offset_usec);
         sleep(4);
     }
     fprintf(fp, "\n");
@@ -244,11 +226,11 @@ int main() {
     // Clear the contents of the results file and write the header
     FILE *fp;
     fp = fopen("nist_results.txt", "w");
-    fprintf(fp, "delay_seconds delay_fraction offset_seconds offset_fraction\n");
+    fprintf(fp, "delay_usec offset_usec\n\n");
     fclose(fp);
 
     // Send request bursts to NTP server
-    for(int i = 0; i < 2; i++) {
+    for(int i = 0; i < 15; i++) {
         send_request_burst(i);
         printf("\n");
     }
