@@ -10,34 +10,15 @@
 
 #include "ntppacket.h"
 
-#define SERVERADDR "utcnist.colorado.edu"
-#define SERVERPORT "123"
+#define SERVERADDR "localhost"
+#define SERVERPORT "4123"
 #define PACKETSIZE 48 // size of our NTP packets
 #define NTP_EPOCH_OFFSET 2208988800UL // seconds between 1/1/1900 (NTP epoch) and 1/1/1970 (Unix epoch)
-
 
 typedef struct {
     uint64_t delay_usec; // microseconds of delay
     uint64_t offset_usec; // microseconds of offset
 } update_value;
-
-uint32_t timeval_to_ntp_seconds(time_t seconds) {
-    /*
-    Converts the seconds value of local Unix-epoch 
-    timestamps to NTP-epoch fractions.
-    https://tickelton.gitlab.io/articles/ntp-timestamps/
-    */
-   return seconds + NTP_EPOCH_OFFSET;
-}
-
-uint32_t timeval_to_ntp_frac(long frac) {
-    /*
-    Converts the fractional second value of local
-    Unix-epoch timestamps to NTP-epoch fractions. 
-    https://tickelton.gitlab.io/articles/ntp-timestamps/
-    */
-   return (uint32_t)((double)(frac + 1) * (double)(1LL << 32) * 1.0e-6);
-}
 
 uint32_t ntp_to_timeval_frac(uint32_t frac) {
     /*
@@ -205,7 +186,7 @@ void send_request_burst(int burst_num) {
 
     // Open results file in append mode
     FILE *fp;
-    fp = fopen("nist_results.txt", "a");
+    fp = fopen("cloud_results.txt", "a");
 
     // Send burst of 8 requests
     for(int i = 0; i < 8; i++) {
@@ -222,10 +203,10 @@ void send_request_burst(int burst_num) {
     fclose(fp);
 }
 
-int main() {
+int main(void) {
     // Clear the contents of the results file and write the header
     FILE *fp;
-    fp = fopen("nist_results.txt", "w");
+    fp = fopen("cloud_results.txt", "w");
     fprintf(fp, "delay_usec offset_usec\n\n");
     fclose(fp);
 
