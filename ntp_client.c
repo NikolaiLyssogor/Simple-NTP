@@ -10,7 +10,7 @@
 
 #include "ntppacket.h"
 
-#define SERVERADDR "localhost"
+#define SERVERADDR "utcnist.colorado.edu"
 #define SERVERPORT "4123"
 #define PACKETSIZE 48 // size of our NTP packets
 #define NTP_EPOCH_OFFSET 2208988800UL // seconds between 1/1/1900 (NTP epoch) and 1/1/1970 (Unix epoch)
@@ -186,7 +186,7 @@ void send_request_burst(int burst_num) {
 
     // Open results file in append mode
     FILE *fp;
-    fp = fopen("cloud_results.txt", "a");
+    fp = fopen("nist_results.txt", "a");
 
     // Send burst of 8 requests
     for(int i = 0; i < 8; i++) {
@@ -206,7 +206,7 @@ void send_request_burst(int burst_num) {
 int main(void) {
     // Clear the contents of the results file and write the header
     FILE *fp;
-    fp = fopen("cloud_results.txt", "w");
+    fp = fopen("nist_results.txt", "w");
     fprintf(fp, "delay_usec offset_usec\n\n");
     fclose(fp);
 
